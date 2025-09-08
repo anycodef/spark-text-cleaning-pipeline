@@ -4,3 +4,5 @@ regex
 demoji
 deep-translator
 openpyxl
+pytest
+pyarrow
