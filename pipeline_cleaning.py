@@ -34,9 +34,7 @@ def remove_urls_mentions(df):
 def replace_emojis_translate(text):
     if text is None:
         return None
-    # 1. Colapsar emojis repetidos
-    text = regex.sub(r'(\X)\1+', r'\1', text)
-    # 2. Reemplazo con traducción
+    text = regex.sub(r'(\X)\1+', r'\1', text)  # Colapsar repetidos
     replacements = demoji.findall(text)
     for emo, desc in replacements.items():
         try:
@@ -44,13 +42,10 @@ def replace_emojis_translate(text):
         except Exception:
             desc_es = desc
         desc_token = desc_es.lower()
-        # Si emoji pegado a palabra → separar
         text = regex.sub(fr'(?<=\w){regex.escape(emo)}', f' {desc_token}', text)
         text = regex.sub(fr'{regex.escape(emo)}(?=\w)', f'{desc_token} ', text)
-        # Caso normal
         text = text.replace(emo, desc_token + " ")
-    text = regex.sub(r'\s+', ' ', text).strip()
-    return text
+    return regex.sub(r'\s+', ' ', text).strip()
 
 replace_emojis_udf = F.udf(replace_emojis_translate, StringType())
 
@@ -109,25 +104,32 @@ def export_results(df_spark, output_path, fmt):
 # Main CLI
 # ---------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Pipeline de limpieza de textos (Caso6)")
-    parser.add_argument("--csv", type=str, required=True, help="Archivo CSV de entrada")
-    parser.add_argument("--export-to-csv", nargs="?", const=True, help="Exportar a CSV (opcional: nombre de archivo)")
-    parser.add_argument("--export-to-excel", nargs="?", const=True, help="Exportar a Excel (opcional: nombre de archivo)")
-    parser.add_argument("--export-to-parquet", nargs="?", const=True, help="Exportar a Parquet (opcional: nombre de archivo)")
+    parser = argparse.ArgumentParser(description="Text cleaning pipeline (Caso6)")
+    parser.add_argument("input_file", type=str, help="Input file (.csv or .xlsx)")
+    parser.add_argument("--export-to-csv", nargs="?", const=True, help="Export to CSV (optional: filename)")
+    parser.add_argument("--export-to-excel", nargs="?", const=True, help="Export to Excel (optional: filename)")
+    parser.add_argument("--export-to-parquet", nargs="?", const=True, help="Export to Parquet (optional: filename)")
     args = parser.parse_args()
 
-    # Crear Spark
+    # Crear sesión Spark
     spark = SparkSession.builder.appName("Caso6-LimpiezaTexto").getOrCreate()
 
-    # Cargar datos CSV
-    df = pd.read_csv(args.csv)
+    # Detectar formato de entrada
+    ext = os.path.splitext(args.input_file)[1].lower()
+    if ext == ".csv":
+        df = pd.read_csv(args.input_file)
+    elif ext in [".xlsx", ".xls"]:
+        df = pd.read_excel(args.input_file, engine="openpyxl")
+    else:
+        raise ValueError("Formato de entrada no soportado. Usa .csv o .xlsx")
+
     df_spark = spark.createDataFrame(df)
 
     # Aplicar pipeline
     df_clean = clean_pipeline(df_spark)
 
-    # Determinar formato y archivo de salida
-    input_base, _ = os.path.splitext(args.csv)
+    # Nombre base de salida
+    input_base, _ = os.path.splitext(args.input_file)
 
     if args.export_to_csv is not None:
         output_file = args.export_to_csv if isinstance(args.export_to_csv, str) else f"{input_base}-clean.csv"
@@ -141,7 +143,7 @@ def main():
         output_file = args.export_to_parquet if isinstance(args.export_to_parquet, str) else f"{input_base}-clean.parquet"
         export_results(df_clean, output_file, "parquet")
 
-    print("✅ Limpieza completada y archivo exportado.")
+    print("✅ Cleaning completed and file exported.")
 
 if __name__ == "__main__":
     main()
